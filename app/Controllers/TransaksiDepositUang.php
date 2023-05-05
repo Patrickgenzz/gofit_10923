@@ -17,81 +17,58 @@ class TransaksiDepositUang extends BaseController
     public function postCreate()
     {   
         $db = db_connect();
-        $data = $this->request->getPost();
+        $data = $this->request->getJSON();
 
-        $validation = \Config\Services::validation();
+        $newId = $this->generateNewId();
 
-        $validation->setRules([
-            'ID_MEMBER' => 'required',
-            'ID_PEGAWAI' => 'required',
-            'JUMLAH_DEPOSIT_UANG' => 'required',
-        ]);
+        // mengambil bonus dan minimal pembayaran dari tabel promo berdasarkan id promo
+        $promo = $db->table('promo')
+        ->where('ID_PROMO', $data->ID_PROMO)
+        ->get()
+        ->getRow();
 
-        if ($validation->run($data) === false) {
-            return $this->failValidationErrors($validation->getErrors());
+        //jika jumlah deposit uang kurang dari 500000 return error
+        if($data->JUMLAH_DEPOSIT_UANG < 500000){
+            return $this->fail('Minimal Deposit Uang Adalah 500000!', 400);
         }
 
-        //membuat auto increment
-        $maxId = $db->table('transaksi_deposit_uang')
-        ->selectMax('id_deposit_uang')
-        ->get()
-        ->getRow()
-        ->id_deposit_uang;
-        $newId = $maxId + 1;
-
-        //mengambil bonus dari tabel promo berdasarkan id promo
-        $cariBonus = $db->table('promo')
-        ->where('ID_PROMO', $data['ID_PROMO'])
-        ->get()
-        ->getRow()
-        ->BONUS;
-
-         //mengambil minimal pembayaran dari tabel promo berdasarkan id promo
-        $minimalPembelian = $db->table('promo')
-        ->where('ID_PROMO', $data['ID_PROMO'])
-        ->get()
-        ->getRow()
-        ->MINIMAL_PEMBELIAN;
-
-        //mengambil sisa deposit uang member
-        $sisaDepositUang = $db->table('member')
-        ->where('ID_MEMBER', $data['ID_MEMBER'])
-        ->get()
-        ->getRow()
-        ->SISA_DEPOSIT_UANG;
-
-         //menghitung bonus
-         $bonus = null;
-         if($data['JUMLAH_DEPOSIT_UANG'] < $minimalPembelian){
+        //mengecek promo
+        if($data->JUMLAH_DEPOSIT_UANG < $promo->MINIMAL_PEMBELIAN){
              $bonus = 0;
-         }else{
-             $bonus = $cariBonus;
-         }       
+        }else{
+             $bonus = $promo->BONUS;
+        }       
 
         $insertData = [
             'ID_DEPOSIT_UANG' => $newId,
-            'ID_MEMBER' => $data['ID_MEMBER'],
-            'ID_PEGAWAI' => $data['ID_PEGAWAI'],
-            'ID_PROMO' => $data['ID_PROMO'],
+            'ID_MEMBER' => $data->ID_MEMBER,
+            'ID_PEGAWAI' => $data->ID_PEGAWAI,
+            'ID_PROMO' => $data->ID_PROMO,
             'TANGGAL_DEPOSIT_UANG' =>  date("Y-m-d H:i:s"),
-            'JUMLAH_DEPOSIT_UANG' => $data['JUMLAH_DEPOSIT_UANG'],
+            'JUMLAH_DEPOSIT_UANG' => $data->JUMLAH_DEPOSIT_UANG,
             'BONUS_DEPOSIT_UANG' => $bonus,
-            'TOTAL_DEPOSIT_UANG' => $data['JUMLAH_DEPOSIT_UANG'] + $bonus,
+            'TOTAL_DEPOSIT_UANG' => $data->JUMLAH_DEPOSIT_UANG + $bonus,
         ];
         
         $query = $db->table('transaksi_deposit_uang')->insert($insertData);
         
-        //update sisa deposit uang member
-        $member = [
-            'SISA_DEPOSIT_UANG' => $sisaDepositUang + $data['JUMLAH_DEPOSIT_UANG'] + $bonus,
-            'STATUS' => 'Aktif',
-        ];
-        $db->table('member')->where('ID_MEMBER', $data['ID_MEMBER'])->update($member);
-
-        if ($query) {
-            return $this->respondCreated($insertData);
+        if (!$query) {
+            return $this->failServerError();
         }
-        return $this->failServerError();
+
+        //mengambil sisa deposit uang member
+        $member = $db->table('member')
+        ->where('ID_MEMBER', $data->ID_MEMBER)
+        ->get()
+        ->getRow();
+
+        $updateMember = [
+            'SISA_DEPOSIT_UANG' => $member->SISA_DEPOSIT_UANG + $data->JUMLAH_DEPOSIT_UANG + $bonus,
+        ];
+        
+        $db->table('member')->where('ID_MEMBER', $data->ID_MEMBER)->update($updateMember);
+
+        return $this->respondCreated($insertData);
     }
 
     public function deleteDelete($id = null)
@@ -103,5 +80,15 @@ class TransaksiDepositUang extends BaseController
         } else {
             return $this->failServerError();
         }
+    }
+
+    private function generateNewId()
+    {
+        $maxIdQuery = db_connect()->query('SELECT MAX(id_deposit_uang) as max_id FROM transaksi_deposit_uang');
+        $maxIdResult = $maxIdQuery->getRow();
+        $lastNumber = (int) substr($maxIdResult->max_id ?? 'DU000', -3);
+        $newNumber = $lastNumber + 1;
+
+        return 'DU' . str_pad($newNumber, 3, '0', STR_PAD_LEFT);
     }
 }

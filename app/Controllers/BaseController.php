@@ -27,7 +27,7 @@ abstract class BaseController extends Controller
      * @var CLIRequest|IncomingRequest
      */
     protected $request;
-
+    protected $db;
     /**
      * An array of helpers to be loaded automatically upon
      * class instantiation. These helpers will be available
@@ -52,6 +52,7 @@ abstract class BaseController extends Controller
         parent::initController($request, $response, $logger);
 
         // Preload any models, libraries, etc, here.
+        $db = db_connect();
 
         // E.g.: $this->session = \Config\Services::session();
     }

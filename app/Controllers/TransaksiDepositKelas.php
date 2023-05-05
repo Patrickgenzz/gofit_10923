@@ -17,21 +17,7 @@ class TransaksiDepositKelas extends BaseController
     public function postCreate()
     {   
         $db = db_connect();
-        $data = $this->request->getPost();
-
-        $validation = \Config\Services::validation();
-
-        $validation->setRules([
-            'ID_MEMBER' => 'required',
-            'ID_KELAS' => 'required',
-            'ID_PEGAWAI' => 'required',
-            'JUMLAH_DEPOSIT_KELAS' => 'required',
-            'JUMLAH_PEMBAYARAN' => 'required',
-        ]);
-
-        if ($validation->run($data) === false) {
-            return $this->failValidationErrors($validation->getErrors());
-        }
+        $data = $this->request->getJSON();
 
         //membuat auto increment
         $maxId = $db->table('transaksi_deposit_kelas')
@@ -42,45 +28,34 @@ class TransaksiDepositKelas extends BaseController
         $newId = $maxId + 1;
 
         //mengecek apakah id promo ada diinputkan oleh user atau tidak
-        // $idPromo = null;
-        // if($data['ID_PROMO'] == null){
-        //     $idPromo = "0";
-        // }else{
-        //     $idPromo = $data['ID_PROMO'];
-        // }
-        
+        if($data['ID_PROMO'] != null){
+            //mengambil bonus dari tabel promo berdasarkan id promo
+            $cariBonus = $db->table('promo')
+            ->where('ID_PROMO', $data['ID_PROMO'])
+            ->get()
+            ->getRow()
+            ->BONUS;       
 
-        //mengambil bonus dari tabel promo berdasarkan id promo
-        $cariBonus = $db->table('promo')
-        ->where('ID_PROMO', $data['ID_PROMO'])
-        ->get()
-        ->getRow()
-        ->BONUS;
-        
+            //mengambil minimal pembayaran dari tabel promo berdasarkan id promo
+            $minimalPembelian = $db->table('promo')
+            ->where('ID_PROMO', $data['ID_PROMO'])
+            ->get()
+            ->getRow()
+            ->MINIMAL_PEMBELIAN;
+            
+            if($data['JUMLAH_PEMBAYARAN'] > $minimalPembelian){
+                $bonus = $cariBonus;    
+            }else{
+                $bonus = 0;
+            }
+            $idPromo = $data['ID_PROMO'];
 
-        //mengambil minimal pembayaran dari tabel promo berdasarkan id promo
-        $minimalPembelian = $db->table('promo')
-        ->where('ID_PROMO', $data['ID_PROMO'])
-        ->get()
-        ->getRow()
-        ->MINIMAL_PEMBELIAN;
-        
-
-        //menghitung bonus
-        $bonus = null;
-        if($data['JUMLAH_PEMBAYARAN'] < $minimalPembelian){
-            $bonus = 0;
         }else{
-            $bonus = $cariBonus;
-        }       
-
-        //mengecek apakah id promo ada berdasarkan tanggal sekarang tanpa inputan dari user
-        // $cek = $db->table('promo')
-        // ->where('ID_PROMO', $data['ID_PROMO'])
-        // ->where('TANGGAL_AKHIR_PROMO >=', date("Y-m-d H:i:s"))
-        // ->where('TANGGAL_AWAL_PROMO <=', date("Y-m-d H:i:s"))
-        // ->get()
-        // ->getRow();
+            $idPromo = "0";
+            $bonus = 0;
+        }
+        
+        
 
         $insertData = [
             'ID_DEPOSIT_KELAS' => $newId,

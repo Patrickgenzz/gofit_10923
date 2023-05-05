@@ -17,31 +17,21 @@ class Kelas extends BaseController
     public function postCreate()
     {   
         $db = db_connect();
-        $data = $this->request->getPost();
+        $data = $this->request->getJSON();
 
-        $validation = \Config\Services::validation();
+        $maxIdQuery = $db->query('SELECT MAX(id_kelas) as max_id FROM kelas');
+        $maxIdResult = $maxIdQuery->getRow();
+        $maxId = $maxIdResult->max_id;
 
-        $validation->setRules([
-            'JENIS_KELAS' => 'required',
-            'TARIF_KELAS' => 'required',
-        ]);
+        $lastNumber = (int) substr($maxId, 2);
+        $newNumber = $lastNumber + 1;
 
-        if ($validation->run($data) === false) {
-            return $this->failValidationErrors($validation->getErrors());
-        }
-
-        //membuat auto increment
-        $maxId = $db->table('kelas')
-        ->selectMax('id_kelas')
-        ->get()
-        ->getRow()
-        ->id_kelas;
-        $newId = $maxId + 1;
+        $newId = 'KS' . str_pad($newNumber, 3, '0', STR_PAD_LEFT);
 
         $insertData = [
             'ID_KELAS' => $newId,
-            'JENIS_KELAS' => $data['JENIS_KELAS'],
-            'TARIF_KELAS' => $data['TARIF_KELAS'],
+            'JENIS_KELAS' => $data->JENIS_KELAS,
+            'TARIF_KELAS' => $data->TARIF_KELAS,
         ];
         
         $query = $db->table('kelas')->insert($insertData);

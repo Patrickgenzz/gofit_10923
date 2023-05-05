@@ -6,9 +6,7 @@ class DepositKelasMember extends BaseController
 {
     public function getIndex()
     {
-        $db = db_connect();
-    
-        $query = $db->query('SELECT * FROM deposit_kelas_member');
+        $query = $this->$db->query('SELECT * FROM deposit_kelas_member');
         $result = $query->getResultArray();
         
         return $this->respond($result, 200);

@@ -17,41 +17,26 @@ class Pegawai extends BaseController
     public function postCreate()
     {   
         $db = db_connect();
-        $data = $this->request->getPost();
+        $data = $this->request->getJSON();
 
-        $validation = \Config\Services::validation();
+        $maxIdQuery = $db->query('SELECT MAX(id_pegawai) as max_id FROM pegawai');
+        $maxIdResult = $maxIdQuery->getRow();
+        $maxId = $maxIdResult->max_id;
 
-        $validation->setRules([
-            'NAMA_PEGAWAI' => 'required',
-            'ALAMAT_PEGAWAI' => 'required',
-            'TANGGAL_LAHIR_PEGAWAI' => 'required',
-            'NO_TELEPON_PEGAWAI' => 'required',
-            'ROLE' => 'required',
-            'PASSWORD' => 'required',
-            'EMAIL' => 'required',
-        ]);
+        $lastNumber = (int) substr($maxId, 2);
+        $newNumber = $lastNumber + 1;
 
-        if ($validation->run($data) === false) {
-            return $this->failValidationErrors($validation->getErrors());
-        }
-
-        //membuat auto increment
-        $maxId = $db->table('pegawai')
-        ->selectMax('id_pegawai')
-        ->get()
-        ->getRow()
-        ->id_pegawai;
-        $newId = $maxId + 1;
+        $newId = 'PI' . str_pad($newNumber, 3, '0', STR_PAD_LEFT);
 
         $insertData = [
             'ID_PEGAWAI' => $newId,
-            'NAMA_PEGAWAI' => $data['NAMA_PEGAWAI'],
-            'ALAMAT_PEGAWAI' => $data['ALAMAT_PEGAWAI'],
-            'TANGGAL_LAHIR_PEGAWAI' => date("Y-m-d"),//harusnya pake data
-            'NO_TELEPON_PEGAWAI' => $data['NO_TELEPON_PEGAWAI'],
-            'ROLE' => $data['ROLE'],
-            'EMAIL' => $data['EMAIL'],
-            'PASSWORD' => password_hash($data['PASSWORD'], PASSWORD_DEFAULT),
+            'NAMA_PEGAWAI' => $data->NAMA_PEGAWAI,
+            'ALAMAT_PEGAWAI' => $data->ALAMAT_PEGAWAI,
+            'TANGGAL_LAHIR_PEGAWAI' =>$data->TANGGAL_LAHIR_PEGAWAI,
+            'NO_TELEPON_PEGAWAI' => $data->NO_TELEPON_PEGAWAI,
+            'ROLE' => $data->ROLE,
+            'EMAIL' => $data->EMAIL,
+            'PASSWORD' => password_hash($data->TANGGAL_LAHIR_PEGAWAI, PASSWORD_DEFAULT),
         ];
         
         $query = $db->table('pegawai')->insert($insertData);
