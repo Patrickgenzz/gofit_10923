@@ -14,6 +14,42 @@ class Instruktur extends BaseController
         return $this->respond($result, 200);
     }
 
+    public function getInstrukturById($id = null){
+        $db = db_connect();
+        $query = $db->table('instruktur')->where('ID_INSTRUKTUR', $id)->get();
+        $result = $query->getRow(); 
+        
+        if ($result) {
+            $terlambat = $db->query('SELECT SUM(keterlambatan) AS TOTAL_KETERLAMBATAN
+                FROM presensi_instruktur
+                WHERE id_instruktur = "'.$id.'"')->getRow();
+
+            if(!$terlambat->TOTAL_KETERLAMBATAN){
+                $terlambat->TOTAL_KETERLAMBATAN = 0;
+            }
+
+            $result->TOTAL_KETERLAMBATAN = $terlambat->TOTAL_KETERLAMBATAN;
+            return $this->respond($result, 200);
+        } else {
+            return $this->failNotFound('Instruktur Tidak Ditemukan!');
+        }
+    }
+
+    public function getJadwalInstrukturById($id = null){
+        $db = db_connect();
+
+        $query = $db->query('SELECT * FROM jadwal_harian WHERE ID_INSTRUKTUR = "'.$id.'" 
+                    AND tanggal_jadwal_harian >= CURDATE()');
+
+        $result = $query->getResultArray();
+
+        $response = [
+            'data' => $result
+        ];
+    
+        return $this->respond($response, 200);
+    }
+
     public function postCreate()
     {   
         $db = db_connect();
@@ -35,7 +71,7 @@ class Instruktur extends BaseController
         $query = $db->table('instruktur')->insert($insertData);
         
         if ($query) {
-            return $this->respond($data, 200);;
+            return $this->respond($insertData, 200);
         } else {
             return $this->failServerError();
         }
@@ -113,5 +149,46 @@ class Instruktur extends BaseController
         } else {
             return $this->failServerError();
         }
+    }
+
+    public function getListPresensiInstruktur($id = null){
+        $db = db_connect();
+
+        $query = $db->query('SELECT * FROM presensi_instruktur WHERE ID_INSTRUKTUR = "'.$id.'"');
+
+        $result = $query->getResultArray();
+
+        $response = [
+            'data' => $result
+        ];
+        return $this->respond($response, 200);
+    }
+
+    public function getListInstruktur($id = null)
+    {
+        $db = db_connect();
+    
+        $query = $db->query('SELECT i.NAMA_INSTRUKTUR
+            FROM instruktur i
+            JOIN jadwal_harian jh ON i.ID_INSTRUKTUR = jh.ID_INSTRUKTUR
+            JOIN jadwal_umum ju ON ju.ID_JADWAL_UMUM = jh.ID_JADWAL_UMUM
+            WHERE i.ID_INSTRUKTUR != "'.$id.'"
+            AND (ju.SESI_JADWAL_UMUM, DATE(jh.TANGGAL_JADWAL_HARIAN)) NOT IN (
+                SELECT ju2.SESI_JADWAL_UMUM, DATE(jh2.TANGGAL_JADWAL_HARIAN)
+                FROM instruktur i2
+                JOIN jadwal_harian jh2 ON i2.ID_INSTRUKTUR = jh2.ID_INSTRUKTUR
+                JOIN jadwal_umum ju2 ON ju2.ID_JADWAL_UMUM = jh2.ID_JADWAL_UMUM
+                WHERE i2.ID_INSTRUKTUR = "'.$id.'"
+            )
+            AND jh.TANGGAL_JADWAL_HARIAN <= CURDATE()
+            GROUP BY i.NAMA_INSTRUKTUR');
+
+        $result = $query->getResultArray();
+
+        $response = [
+            'data' => $result
+        ];
+        
+        return $this->respond($response, 200);
     }
 }

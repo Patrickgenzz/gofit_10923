@@ -8,7 +8,13 @@ class TransaksiDepositKelas extends BaseController
     {
         $db = db_connect();
     
-        $query = $db->query('SELECT * FROM transaksi_deposit_kelas');
+        $query = $db->query('SELECT dk.*, m.NAMA_MEMBER, p.NAMA_PEGAWAI, k.JENIS_KELAS, pr.JENIS_PROMO
+                        FROM transaksi_deposit_kelas dk
+                        JOIN member m on dk.ID_MEMBER = m.ID_MEMBER
+                        JOIN pegawai p on dk.ID_PEGAWAI = p.ID_PEGAWAI
+                        JOIN kelas k on dk.ID_KELAS = k.ID_KELAS
+                        JOIN promo pr on dk.ID_PROMO = pr.ID_PROMO');
+                        
         $result = $query->getResultArray();
         
         return $this->respond($result, 200);
@@ -19,68 +25,77 @@ class TransaksiDepositKelas extends BaseController
         $db = db_connect();
         $data = $this->request->getJSON();
 
-        //membuat auto increment
-        $maxId = $db->table('transaksi_deposit_kelas')
-        ->selectMax('id_deposit_kelas')
-        ->get()
-        ->getRow()
-        ->id_deposit_kelas;
-        $newId = $maxId + 1;
+        $newId = $this->generateNewId();
+        $newIdKelasMember = $this->generateNewIdKelasMember();
 
-        //mengecek apakah id promo ada diinputkan oleh user atau tidak
-        if($data['ID_PROMO'] != null){
-            //mengambil bonus dari tabel promo berdasarkan id promo
-            $cariBonus = $db->table('promo')
-            ->where('ID_PROMO', $data['ID_PROMO'])
-            ->get()
-            ->getRow()
-            ->BONUS;       
+        // Mengambil bonus dan minimal pembayaran dari tabel promo berdasarkan tanggal hari ini dengan tanggal mulai dan tanggal selesai
+        $promo = $db->query("SELECT * FROM promo 
+            WHERE WAKTU_MULAI_PROMO <= CURDATE() 
+            AND WAKTU_SELESAI_PROMO >= CURDATE() 
+            AND JENIS_PROMO = 'Kelas' 
+            AND MINIMAL_PEMBELIAN <= $data->JUMLAH_DEPOSIT_KELAS 
+            ORDER BY BONUS DESC 
+            LIMIT 1")
+        ->getRow();
 
-            //mengambil minimal pembayaran dari tabel promo berdasarkan id promo
-            $minimalPembelian = $db->table('promo')
-            ->where('ID_PROMO', $data['ID_PROMO'])
-            ->get()
-            ->getRow()
-            ->MINIMAL_PEMBELIAN;
-            
-            if($data['JUMLAH_PEMBAYARAN'] > $minimalPembelian){
-                $bonus = $cariBonus;    
-            }else{
-                $bonus = 0;
-            }
-            $idPromo = $data['ID_PROMO'];
-
-        }else{
-            $idPromo = "0";
-            $bonus = 0;
+        // Jika tidak ada promo yang aktif maka promo = promo dengan id PO000
+        if (!$promo) {
+            $promo = $db->query("SELECT * FROM promo WHERE ID_PROMO = 'PO000'")->getRow();
         }
-        
-        
 
+        // Bonus deposit kelas
+        $bonus = $promo->BONUS;
+
+        // insert atau update tabel deposit_kelas_member
+        $kelasMember = $db->query("SELECT * FROM deposit_kelas_member WHERE ID_MEMBER = '$data->ID_MEMBER' AND ID_KELAS = '$data->ID_KELAS'")->getRow();
+
+        if(!$kelasMember){
+            $insertKelasMember = [
+                'ID_DEPOSIT_KELAS_MEMBER' => $newIdKelasMember,
+                'ID_MEMBER' => $data->ID_MEMBER,
+                'ID_KELAS' => $data->ID_KELAS,
+                'SISA_DEPOSIT_KELAS' => $data->JUMLAH_DEPOSIT_KELAS + $bonus,
+            ];
+    
+            $kelasMember = $db->table('deposit_kelas_member')->insert($insertKelasMember);
+        }else{
+            $updateKelasMember = [
+                'SISA_DEPOSIT_KELAS' => $kelasMember->SISA_DEPOSIT_KELAS + $data->JUMLAH_DEPOSIT_KELAS + $bonus,
+            ];
+    
+            $kelasMember = $db->table('deposit_kelas_member')->update($updateKelasMember, ['ID_DEPOSIT_KELAS_MEMBER' => $kelasMember->ID_DEPOSIT_KELAS_MEMBER]);
+        }
+
+        // insert tabel transaksi_deposit_kelas
         $insertData = [
             'ID_DEPOSIT_KELAS' => $newId,
-            'ID_MEMBER' => $data['ID_MEMBER'],
-            'ID_PROMO' =>$data['ID_PROMO'],
-            'ID_KELAS' => $data['ID_KELAS'],
-            'ID_PEGAWAI' => $data['ID_PEGAWAI'],
+            'ID_MEMBER' => $data->ID_MEMBER,
+            'ID_PROMO' => $promo->ID_PROMO,
+            'ID_KELAS' => $data->ID_KELAS,
+            'ID_PEGAWAI' => $data->ID_PEGAWAI,
             'TANGGAL_DEPOSIT_KELAS' =>  date("Y-m-d H:i:s"),
-            'JUMLAH_DEPOSIT_KELAS' => $data['JUMLAH_DEPOSIT_KELAS'],
+            'JUMLAH_DEPOSIT_KELAS' => $data->JUMLAH_DEPOSIT_KELAS,
             'BONUS_DEPOSIT_KELAS' => $bonus,
-            'MASA_BERLAKU_DEPOSIT_KELAS' => date("Y-m-d H:i:s"),
-            'JUMLAH_PEMBAYARAN' => $data['JUMLAH_PEMBAYARAN'],
-            'TOTAL_DEPOSIT_KELAS' => $data['JUMLAH_PEMBAYARAN'] + $bonus,
+            'MASA_BERLAKU_DEPOSIT_KELAS' => date("Y-m-d H:i:s", strtotime("+1 month")),
+            'JUMLAH_PEMBAYARAN' => $data->JUMLAH_PEMBAYARAN,
+            'TOTAL_DEPOSIT_KELAS' => $data->JUMLAH_DEPOSIT_KELAS + $bonus,
         ];
         
         $query = $db->table('transaksi_deposit_kelas')->insert($insertData);
-        
-        //update tanggal kadaluarsa member
-        // $member = [
-        //     'TANGGAL_KADALUARSA' => date("Y-m-d H:i:s"),
-        // ];
-        // $db->table('member')->where('ID_MEMBER', $data['ID_MEMBER'])->update($member);
 
+        $member = $db->query("SELECT * FROM member WHERE ID_MEMBER = '$data->ID_MEMBER'")->getRow();
+        $pegawai = $db->query("SELECT * FROM pegawai WHERE ID_PEGAWAI = '$data->ID_PEGAWAI'")->getRow();
+        $promo = $db->query("SELECT * FROM promo WHERE ID_PROMO = '$promo->ID_PROMO'")->getRow();
+        $kelas = $db->query("SELECT * FROM kelas WHERE ID_KELAS = '$data->ID_KELAS'")->getRow();
+
+        // Menambahkan data member, pegawai, promo, dan kelas ke dalam array $insertData
+        $insertData['NAMA_MEMBER'] = $member->NAMA_MEMBER;
+        $insertData['NAMA_PEGAWAI'] = $pegawai->NAMA_PEGAWAI;
+        $insertData['JENIS_PROMO'] = $promo->JENIS_PROMO;
+        $insertData['JENIS_KELAS'] = $kelas->JENIS_KELAS;
+        
         if ($query) {
-            return $this->respondCreated($data);
+            return $this->respondCreated($insertData);
         } else {
             return $this->failServerError();
         }
@@ -95,5 +110,28 @@ class TransaksiDepositKelas extends BaseController
         } else {
             return $this->failServerError();
         }
+    }
+
+    private function generateNewId()
+    {
+        $maxIdQuery = db_connect()->query('SELECT MAX(id_deposit_kelas) as max_id FROM transaksi_deposit_kelas');
+        $maxIdResult = $maxIdQuery->getRow();
+        $lastNumber = (int) substr($maxIdResult->max_id ?? '000', -3);
+        $newNumber = $lastNumber + 1;
+
+        $year = date('y');
+        $month = date('m');
+        
+        return $year.'.'.$month.'.' . str_pad($newNumber, 3, '0', STR_PAD_LEFT);
+    }
+
+    private function generateNewIdKelasMember()
+    {
+        $maxIdQuery = db_connect()->query('SELECT MAX(id_deposit_kelas_member) as max_id FROM deposit_kelas_member');
+        $maxIdResult = $maxIdQuery->getRow();
+        $lastNumber = (int) substr($maxIdResult->max_id ?? 'DKM000', -3);
+        $newNumber = $lastNumber + 1;
+
+        return 'DKM' . str_pad($newNumber, 3, '0', STR_PAD_LEFT);
     }
 }

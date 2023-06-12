@@ -14,6 +14,18 @@ class Pegawai extends BaseController
         return $this->respond($result, 200);
     }
 
+    public function getPegawaiById($id = null){
+        $db = db_connect();
+        $query = $db->table('pegawai')->where('ID_PEGAWAI', $id)->get();
+        $result = $query->getRow(); 
+        
+        if ($result) {
+            return $this->respond($result, 200);
+        } else {
+            return $this->failNotFound('Pegawai Tidak Ditemukan!');
+        }
+    }
+
     public function postCreate()
     {   
         $db = db_connect();

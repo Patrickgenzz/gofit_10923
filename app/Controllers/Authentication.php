@@ -54,8 +54,32 @@ class Authentication extends BaseController
             }
         } else {
             return $this->failUnauthorized();
-        }
-        
+        }   
     }
-    
+
+    public function postGantiPasswordInstruktur()
+    {
+        $db = db_connect();
+        $data = $this->request->getJSON();
+        
+        $results = $db->query(
+            'SELECT EMAIL, PASSWORD FROM instruktur WHERE EMAIL="' . $data->EMAIL . '";'
+        )->getResultArray();
+
+        if (password_verify($data->PASSWORD, $results[0]['PASSWORD'])) {
+            $updateData = [
+                'PASSWORD' => password_hash($data->NEW_PASSWORD, PASSWORD_DEFAULT)
+            ];
+
+            $query = $db->table('instruktur')->where('EMAIL', $data->EMAIL)->update($updateData);
+            
+            if ($query) {
+                return $this->respondUpdated($data, 200);
+            } else {
+                return $this->failServerError();
+            }
+        } else {
+            return $this->failUnauthorized();
+        }   
+    }
 }

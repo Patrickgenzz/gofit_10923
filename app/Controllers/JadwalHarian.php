@@ -7,11 +7,42 @@ class JadwalHarian extends BaseController
     public function getIndex()
     {
         $db = db_connect();
-    
-        $query = $db->query('SELECT * FROM jadwal_harian');
+
+        // update the status of the class
+        //kalau ada edit data tinggal pake and status != Batalkan
+        $db->query('UPDATE jadwal_harian SET STATUS_KELAS = "Selesai" WHERE TANGGAL_JADWAL_HARIAN < NOW() AND STATUS_KELAS != "Libur" AND STATUS_KELAS != "Izin"'); 
+        $db->query('UPDATE jadwal_harian SET STATUS_KELAS = "Sedang Berlangsung" WHERE TANGGAL_JADWAL_HARIAN BETWEEN NOW() AND NOW() + INTERVAL 1 HOUR AND STATUS_KELAS != "Libur" AND STATUS_KELAS != "Izin"');
+
+        $query = $db->query('SELECT jh.*, k.JENIS_KELAS, i.NAMA_INSTRUKTUR, ju.HARI_JADWAL_UMUM, ju.SESI_JADWAL_UMUM
+                FROM jadwal_harian jh
+                JOIN jadwal_umum ju ON jh.ID_JADWAL_UMUM = ju.ID_JADWAL_UMUM
+                JOIN kelas k ON ju.ID_KELAS = k.ID_KELAS
+                JOIN instruktur i ON jh.ID_INSTRUKTUR = i.ID_INSTRUKTUR
+                WHERE jh.STATUS_KELAS != "Selesai" AND jh.tanggal_jadwal_harian >= CURDATE()');
+                   
         $result = $query->getResultArray();
        
         return $this->respond($result, 200);
+    }
+
+    public function getGetJadwalHarian(){
+        $db = db_connect();
+
+        $query = $db->query('SELECT jh.*, k.JENIS_KELAS, i.NAMA_INSTRUKTUR, ju.HARI_JADWAL_UMUM, ju.SESI_JADWAL_UMUM, k.TARIF_KELAS
+                FROM jadwal_harian jh
+                JOIN jadwal_umum ju ON jh.ID_JADWAL_UMUM = ju.ID_JADWAL_UMUM
+                JOIN kelas k ON ju.ID_KELAS = k.ID_KELAS
+                JOIN instruktur i ON jh.ID_INSTRUKTUR = i.ID_INSTRUKTUR
+                WHERE jh.STATUS_KELAS != "Selesai" AND jh.tanggal_jadwal_harian >= CURDATE()
+                ORDER BY jh.TANGGAL_JADWAL_HARIAN ASC');
+
+        $result = $query->getResultArray();
+
+        $response = [
+            'data' => $result
+        ];
+    
+        return $this->respond($response, 200);
     }
 
     public function postCreate()
@@ -19,6 +50,10 @@ class JadwalHarian extends BaseController
         $db = db_connect();
         $query = $db->query('SELECT * FROM jadwal_umum');
         $jadwalUmum = $query->getResultArray();
+
+        if(!$jadwalUmum){
+            return $this->fail('Tidak Ada Jadwal Umum!', 400);
+        }
 
         foreach ($jadwalUmum as $data) {
             // get the date for the current day of the week
@@ -54,10 +89,11 @@ class JadwalHarian extends BaseController
                     'TANGGAL_JADWAL_HARIAN' => date('Y-m-d H:i:s', strtotime($date . ' + ' . $random . ' second')),
                     'ID_JADWAL_UMUM' => $data['ID_JADWAL_UMUM'],
                     'ID_INSTRUKTUR' => $data['ID_INSTRUKTUR'],
-                    'STATUS_KELAS' => "Belum Terlaksana",
+                    'STATUS_KELAS' => "Belum Dimulai",
                 ];
 
                 $query = $db->table('jadwal_harian')->insert($insertData);
+
                 if (!$query) {
                     return $this->failServerError();
                 }
@@ -68,16 +104,44 @@ class JadwalHarian extends BaseController
                     'TANGGAL_JADWAL_HARIAN' => $date,
                     'ID_JADWAL_UMUM' => $data['ID_JADWAL_UMUM'],
                     'ID_INSTRUKTUR' => $data['ID_INSTRUKTUR'],
-                    'STATUS_KELAS' => "Belum Terlaksana",
+                    'STATUS_KELAS' => "Belum Dimulai",
                 ];
 
                 $query = $db->table('jadwal_harian')->insert($insertData);
+                
                 if (!$query) {
                     return $this->failServerError();
                 }
             }
         }
-        return $this->respondCreated($jadwalUmum);
+
+        $result = $db->query('SELECT jh.*, k.JENIS_KELAS, i.NAMA_INSTRUKTUR, ju.HARI_JADWAL_UMUM, ju.SESI_JADWAL_UMUM
+                FROM jadwal_harian jh
+                JOIN jadwal_umum ju ON jh.ID_JADWAL_UMUM = ju.ID_JADWAL_UMUM
+                JOIN kelas k ON ju.ID_KELAS = k.ID_KELAS
+                JOIN instruktur i ON jh.ID_INSTRUKTUR = i.ID_INSTRUKTUR
+                WHERE jh.STATUS_KELAS != "Selesai" AND jh.tanggal_jadwal_harian >= CURDATE()')
+        ->getResultArray();
+
+        return $this->respondCreated($result, 'Jadwal Harian Berhasil Digenerate!');
+    }
+
+    public function putUpdate($id = null)
+    {
+        $db = db_connect();
+        $data = $this->request->getJSON();
+
+        $updateData = [
+            'STATUS_KELAS' => $data->STATUS_KELAS,
+        ];
+
+        $query = $db->table('jadwal_harian')->update($updateData, ['TANGGAL_JADWAL_HARIAN' => $id]);
+
+        if ($query) {
+            return $this->respondUpdated($data, 200);
+        } else {
+            return $this->failServerError();
+        }
     }
     
     private function getDateForDayOfWeek($dayOfWeek)
@@ -130,14 +194,36 @@ class JadwalHarian extends BaseController
         return $daysToAdd;
     }
 
-    // public function deleteDelete($id = null)
-    // {
-    //     $db = db_connect();
-    //     $query = $db->table('jadwal_harian')->delete(['ID_JADWAL_UMUM' => $id]);
-    //     if ($query) {
-    //         return $this->respondDeleted(['ID_JADWAL_UMUM' => $id]);
-    //     } else {
-    //         return $this->failServerError();
-    //     }
-    // }
+    public function postDelete(){
+        $db = db_connect();
+        
+        $query =  $db->table('jadwal_harian')->emptyTable();
+        if (!$query) {
+            return $this->failServerError();
+        }
+        return $this->respondDeleted('Jadwal Harian Berhasil Dihapus!');
+    }
+
+    public function getFind($cari = null)
+    {
+        $db = db_connect();
+        
+        $query =  $db->query('SELECT jh.*, k.JENIS_KELAS, i.NAMA_INSTRUKTUR, ju.HARI_JADWAL_UMUM, ju.SESI_JADWAL_UMUM 
+                    FROM jadwal_harian jh 
+                    JOIN jadwal_umum ju ON jh.ID_JADWAL_UMUM = ju.ID_JADWAL_UMUM 
+                    JOIN kelas k ON ju.ID_KELAS = k.ID_KELAS 
+                    JOIN instruktur i ON jh.ID_INSTRUKTUR = i.ID_INSTRUKTUR 
+                    WHERE k.JENIS_KELAS LIKE "%' . $cari . '%"
+                    OR i.NAMA_INSTRUKTUR LIKE "%' . $cari . '%"
+                    OR ju.HARI_JADWAL_UMUM LIKE "%' . $cari . '%"
+                    OR ju.SESI_JADWAL_UMUM LIKE "%' . $cari . '%"');
+
+        $result = $query->getResultArray();            
+                    
+        if ($result) {
+            return $this->respond($result, 200);
+        } else {
+            return $this->failNotFound();
+        }
+    }
 }

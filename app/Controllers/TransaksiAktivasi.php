@@ -8,7 +8,10 @@ class TransaksiAktivasi extends BaseController
     {
         $db = db_connect();
     
-        $query = $db->query('SELECT * FROM transaksi_aktivasi');
+        $query = $db->query('SELECT ta.*, m.NAMA_MEMBER, p.NAMA_PEGAWAI FROM transaksi_aktivasi ta
+                        JOIN member m ON ta.ID_MEMBER = m.ID_MEMBER
+                        JOIN pegawai p ON ta.ID_PEGAWAI = p.ID_PEGAWAI');
+                        
         $result = $query->getResultArray();
         
         return $this->respond($result, 200);
@@ -32,8 +35,9 @@ class TransaksiAktivasi extends BaseController
         
         $query = $db->table('transaksi_aktivasi')->insert($insertData);
     
-        if (!$query) 
+        if (!$query) {
             return $this->failServerError();
+        }
         
         //mengembalikan sisa pembayaran jika lebih dari 3 juta
         if($data->JUMLAH_PEMBAYARAN > 3000000){
@@ -41,6 +45,11 @@ class TransaksiAktivasi extends BaseController
         } else {
             $sisa_transaksi = 0;
         }
+
+        $pegawai = $db->table('pegawai')
+        ->where('ID_PEGAWAI', $data->ID_PEGAWAI)
+        ->get()
+        ->getRow();
 
         //mengambil sisa deposit uang member
         $member = $db->table('member')
@@ -56,6 +65,10 @@ class TransaksiAktivasi extends BaseController
         ];
         
         $db->table('member')->where('ID_MEMBER', $data->ID_MEMBER)->update($updateMember);
+
+        //menambah data yang akan dikirim ke frontend
+        $insertData['NAMA_MEMBER'] = $member->NAMA_MEMBER;
+        $insertData['NAMA_PEGAWAI'] = $pegawai->NAMA_PEGAWAI;
 
         return $this->respondCreated($insertData);
     }
@@ -75,9 +88,12 @@ class TransaksiAktivasi extends BaseController
     {
         $maxIdQuery = db_connect()->query('SELECT MAX(id_aktivasi) as max_id FROM transaksi_aktivasi');
         $maxIdResult = $maxIdQuery->getRow();
-        $lastNumber = (int) substr($maxIdResult->max_id ?? 'AK000', -3);
+        $lastNumber = (int) substr($maxIdResult->max_id ?? '000', -3);
         $newNumber = $lastNumber + 1;
 
-        return 'AK' . str_pad($newNumber, 3, '0', STR_PAD_LEFT);
+        $year = date('y');
+        $month = date('m');
+        
+        return $year.'.'.$month.'.' . str_pad($newNumber, 3, '0', STR_PAD_LEFT);
     }
 }
